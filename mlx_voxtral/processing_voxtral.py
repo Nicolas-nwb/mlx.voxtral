@@ -201,6 +201,70 @@ class VoxtralProcessor:
             tokenizer=tokenizer,
         )
 
+    def preprocess_batch(
+        self,
+        audios: List[Union[str, np.ndarray, List[float]]],
+        language: str = "auto",
+        task: str = "transcribe",
+        return_tensors: str = "np",
+        padding: bool = True,
+    ) -> List[Dict[str, Union[np.ndarray, mx.array]]]:
+        """
+        Prétraite un batch de fichiers audio pour l'inférence ou l'entraînement.
+
+        Note: Retourne une liste d'échantillons individuels plutôt qu'un tenseur batché,
+        car VoxtralEncoder attend une entrée 3D [batch=1, n_mels, n_frames].
+        Chaque fichier audio peut avoir un nombre différent de chunks.
+
+        Args:
+            audios: Liste de chemins de fichiers, URLs, ou tableaux numpy
+            language: Code langue ("fr", "en", "auto", etc.) - réservé pour usage futur
+            task: "transcribe" ou "translate" - réservé pour usage futur
+            return_tensors: "np" pour numpy, "mlx" pour mx.array
+            padding: Paramètre conservé pour compatibilité arrière (actuellement ignoré)
+
+        Returns:
+            Liste de dicts, un par fichier audio, chacun contenant:
+                - input_features: Tableau 3D [n_chunks, n_mels, n_frames]
+
+        Example:
+            >>> processor = VoxtralProcessor.from_pretrained("mistralai/Voxtral-Mini-3B")
+            >>> results = processor.preprocess_batch(
+            ...     ["audio1.wav", "audio2.wav"],
+            ...     language="fr"
+            ... )
+            >>> # Traite chaque audio individuellement
+            >>> for result in results:
+            ...     input_features = result["input_features"]  # [n_chunks, 128, 3000]
+
+        Note:
+            Les paramètres language, task et padding sont actuellement réservés pour usage futur
+            et n'affectent pas le prétraitement des features audio.
+
+            Attention masks ne sont pas générés par cette méthode. Pour une inférence complète
+            avec formatage de prompt et gestion des tokens spéciaux, utilisez
+            apply_transcrition_request() à la place.
+        """
+        # Note: padding parameter kept for backward compatibility but currently ignored
+        # Process each audio individually and return as list
+        # (VoxtralEncoder expects 3D input, not 4D batched)
+        results = []
+
+        for audio in audios:
+            audio_result = self.feature_extractor(
+                audio, return_tensors="np" if return_tensors == "np" else "mlx"
+            )
+            features = audio_result["input_features"]
+
+            # Create result dict for this audio
+            result = {
+                "input_features": features,  # [n_chunks, n_mels, n_frames]
+            }
+
+            results.append(result)
+
+        return results
+
     def apply_transcrition_request(
         self,
         audio: Union[str, np.ndarray, List[float]],
@@ -211,7 +275,7 @@ class VoxtralProcessor:
 
         This formats the input according to Voxtral's expected format:
         [INST][BEGIN_AUDIO][AUDIO]...[/INST]lang:{language}[TRANSCRIBE]
-        
+
         If language is None, the format is:
         [INST][BEGIN_AUDIO][AUDIO]...[/INST][TRANSCRIBE]
 

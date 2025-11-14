@@ -7,7 +7,9 @@ MLX Voxtral is an optimized implementation of Mistral AI's Voxtral speech models
 - 🚀 **Optimized for Apple Silicon** - Leverages MLX framework for maximum performance on M1/M2/M3 chips
 - 🗜️ **Model Quantization** - Reduce model size by 4.3x with minimal quality loss
 - 🎙️ **Full Audio Pipeline** - Complete audio processing from file/URL to transcription
-- 🔧 **CLI Tools** - Command-line utilities for transcription and quantization
+- 📦 **Batch Processing** - Process multiple audio files simultaneously with automatic padding
+- 🎯 **LoRA Fine-Tuning** - Parameter-efficient fine-tuning for custom datasets
+- 🔧 **CLI Tools** - Command-line utilities for transcription, quantization, and fine-tuning
 - 📦 **Pre-quantized Models** - Ready-to-use quantized models available
 
 ## Installation
@@ -151,10 +153,38 @@ outputs = model.generate(
 )
 ```
 
-### Processing Multiple Files
+### Batch Processing
+
+Preprocess multiple audio files efficiently:
 
 ```python
-# Process multiple audio files sequentially
+from mlx_voxtral import VoxtralProcessor
+
+processor = VoxtralProcessor.from_pretrained("mistralai/Voxtral-Mini-3B-2507")
+
+# Batch preprocess multiple audio files
+results = processor.preprocess_batch(
+    ["audio1.wav", "audio2.wav", "audio3.wav"],
+    language="fr",
+    return_tensors="mlx"
+)
+
+# Returns list of dicts, one per audio file
+# Each result contains:
+# - input_features: [n_chunks, 128, 3000]
+
+# Process each audio individually
+for result in results:
+    input_features = result["input_features"]
+    # ... use with model
+```
+
+**Note**: `preprocess_batch()` returns a list of preprocessed samples rather than a batched tensor, since each audio may have a different number of chunks. For full model inference with proper prompt formatting, use `apply_transcrition_request()` instead.
+
+### Processing Multiple Files Sequentially
+
+```python
+# Process multiple audio files one at a time
 audio_files = ["audio1.mp3", "audio2.mp3", "audio3.mp3"]
 transcriptions = []
 
@@ -166,6 +196,90 @@ for audio_file in audio_files:
 ```
 
 Note: The model processes one audio file at a time. For long audio files, it automatically splits them into 30-second chunks internally.
+
+## Fine-Tuning with LoRA
+
+MLX Voxtral supports parameter-efficient fine-tuning using LoRA (Low-Rank Adaptation):
+
+### Prepare Your Dataset
+
+Create a JSON file with your training data:
+
+```json
+[
+  {"audio_path": "path/to/audio1.wav", "text": "transcription text 1"},
+  {"audio_path": "path/to/audio2.wav", "text": "transcription text 2"},
+  {"audio_path": "path/to/audio3.wav", "text": "transcription text 3"}
+]
+```
+
+### Fine-Tune the Model
+
+```bash
+# Basic fine-tuning with LoRA
+python -m mlx_voxtral.finetune \
+    --model mistralai/Voxtral-Mini-3B-2507 \
+    --dataset dataset.json \
+    --output lora_adapters/ \
+    --batch-size 1 \
+    --epochs 3 \
+    --lr 1e-4 \
+    --lora-rank 8
+```
+
+### Use the Fine-Tuned Model
+
+```python
+from mlx_voxtral import VoxtralForConditionalGeneration, VoxtralProcessor
+from mlx_voxtral.lora import load_lora_adapters
+
+# Load base model
+model = VoxtralForConditionalGeneration.from_pretrained("mistralai/Voxtral-Mini-3B-2507")
+processor = VoxtralProcessor.from_pretrained("mistralai/Voxtral-Mini-3B-2507")
+
+# Load LoRA adapters
+model = load_lora_adapters(model, "lora_adapters/")
+
+# Use the fine-tuned model
+inputs = processor.apply_transcrition_request(language="en", audio="test.mp3")
+outputs = model.generate(**inputs, max_new_tokens=1024)
+transcription = processor.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+print(transcription)
+```
+
+### LoRA Parameters
+
+- `--lora-rank`: LoRA rank (default: 8). Higher values = more parameters but better quality
+- `--lora-alpha`: LoRA scaling factor (default: 16.0)
+- `--lr`: Learning rate (default: 1e-4)
+- `--epochs`: Number of training epochs (default: 3)
+
+### Advanced Fine-Tuning
+
+```python
+from mlx_voxtral import VoxtralForConditionalGeneration
+from mlx_voxtral.lora import inject_lora_layers, save_lora_adapters
+import mlx.optimizers as optim
+
+# Load model and inject LoRA
+model = VoxtralForConditionalGeneration.from_pretrained("mistralai/Voxtral-Mini-3B-2507")
+model, num_params = inject_lora_layers(
+    model,
+    rank=8,
+    alpha=16.0,
+    target_modules=["q_proj", "v_proj", "k_proj", "o_proj"]
+)
+
+print(f"Trainable parameters: {num_params:,}")
+
+# Custom training loop
+optimizer = optim.AdamW(learning_rate=1e-4)
+
+# ... your training loop here ...
+
+# Save adapters
+save_lora_adapters(model, "my_lora_adapters/", metadata={"epochs": 5})
+```
 
 ## Pre-quantized Models
 
@@ -233,9 +347,12 @@ outputs = model.generate(
 
 ## TODO
 
-- [ ] **Batch Processing Support**: Implement batched inference for processing multiple audio files simultaneously
+- [x] **Batch Processing Support**: Implement batched inference for processing multiple audio files simultaneously ✅
+- [x] **LoRA Fine-Tuning**: Add parameter-efficient fine-tuning capabilities ✅
 - [ ] **Transformers Tokenizer Integration**: Add support for using Hugging Face Transformers tokenizers as an alternative to mistral-common
 - [ ] **Swift Support**: Create a Swift library for Voxtral support
+- [ ] **Gradient Accumulation**: Support larger effective batch sizes through gradient accumulation
+- [ ] **Evaluation Metrics**: Add WER (Word Error Rate) and CER (Character Error Rate) calculation
 
 ## License
 

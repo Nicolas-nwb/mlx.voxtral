@@ -17,3 +17,4 @@ temp
 CLAUDE.md
 docs
 quantized_models
+*.safetensors

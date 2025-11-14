@@ -15,9 +15,9 @@ from pathlib import Path
 
 import argparse
 import logging
-import shutil
 
 import mlx.core as mx
+
 from mlx_voxtral import load_voxtral_model
 
 from mlx_voxtral.quantization import (
@@ -27,7 +27,7 @@ from mlx_voxtral.quantization import (
     compute_bits_per_weight,
     voxtral_mixed_quantization_predicate,
 )
-from mlx_lm.utils import get_model_path
+from .common import copy_support_files, resolve_model_assets_path
 
 
 def main():
@@ -109,26 +109,32 @@ def main():
     
     if args.mixed:
         logger.info("Using mixed precision quantization")
-        # Pass the default bits to the predicate
-        quant_predicate = lambda p, m, c: voxtral_mixed_quantization_predicate(p, m, c, default_bits=args.bits)
+
+        def quant_predicate(path, module):
+            return voxtral_mixed_quantization_predicate(
+                path,
+                module,
+                config,
+                default_bits=args.bits,
+            )
     else:
-        def uniform_with_exclusions(path, module, config):
+
+        def quant_predicate(path, module):
             if "embed_positions" in path or "pos_emb" in path:
                 return False
             if not hasattr(module, "to_quantized"):
                 return False
             return True
-        
+
         logger.info("Using uniform quantization with exclusions")
-        quant_predicate = uniform_with_exclusions
     
     # This is the key - we use mlx_lm's quantize_model directly!
     quantized_model, quantized_config = quantize_model(
         model,
         config,
-        q_group_size=args.group_size,
-        q_bits=args.bits,
-        quant_predicate=quant_predicate
+        group_size=args.group_size,
+        bits=args.bits,
+        quant_predicate=quant_predicate,
     )
     
     # Save using mlx_lm utilities
@@ -141,39 +147,11 @@ def main():
     save_config(quantized_config, output_path / "config.json")
     
     # Get source model path
-    if Path(args.model).exists():
-        model_path = Path(args.model)
-    else:
-        model_path, _ = get_model_path(args.model)
+    model_path = resolve_model_assets_path(args.model)
     
-    # Copy all necessary files for the processor and tokenizer
+    # Copy processor/tokenizer assets
     logger.info("Copying tokenizer and processor files...")
-    
-    # List of essential files to copy
-    essential_files = [
-        "generation_config.json",
-        "preprocessor_config.json", 
-        "tekken.json",  # Mistral tokenizer
-        "params.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "tokenizer.model",  # For other tokenizers
-        "*.tiktoken",  # For tiktoken-based tokenizers
-    ]
-    
-    # Copy all essential files
-    for pattern in essential_files:
-        for file in model_path.glob(pattern):
-            if file.is_file():
-                shutil.copy2(file, output_path / file.name)
-                logger.info(f"Copied {file.name}")
-    
-    # Also copy any Python files (model code)
-    for file in model_path.glob("*.py"):
-        if file.is_file():
-            shutil.copy2(file, output_path / file.name)
-            logger.info(f"Copied {file.name}")
+    copy_support_files(model_path, output_path, logger)
     
     # Report quantization results
     try:

@@ -18,3 +18,5 @@ CLAUDE.md
 docs
 quantized_models
 *.safetensors
+voxtral-small-bf16/
+tests/audios/

@@ -28,6 +28,7 @@ Issues = "https://github.com/mzbac/mlx.voxtral/issues"
 [project.entry-points."console_scripts"]
 "mlx-voxtral.quantize" = "mlx_voxtral.scripts.quantize_voxtral:main"
 "mlx-voxtral.generate" = "mlx_voxtral.scripts.generate:main"
+"mlx-voxtral.convert" = "mlx_voxtral.scripts.convert_voxtral:main"
 
 [tool.uv]
 package = true

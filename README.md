@@ -76,6 +76,26 @@ mlx-voxtral.generate --model ./voxtral-mini-4bit --audio speech.mp3
 
 MLX Voxtral includes powerful quantization capabilities to reduce model size and improve performance:
 
+### Checkpoint Conversion
+
+Convert Hugging Face checkpoints to MLX safetensors (bfloat16/float16) or quantized format:
+
+```bash
+# Convert to BF16 without quantization
+mlx-voxtral.convert mistralai/Voxtral-Small-24B-2507 \
+    --output-dir ./voxtral-small-bf16 \
+    --dtype bfloat16
+
+# Convert + quantize to 4-bit MLX format (with scales)
+mlx-voxtral.convert mistralai/Voxtral-Small-24B-2507 \
+    --output-dir ./voxtral-small-4bit \
+    --dtype float16 \
+    --bits 4 \
+    --group-size 64
+```
+
+Use `--mixed` to enable the Voxtral mixed-precision predicate and `--overwrite` to rebuild an existing directory.
+
 ### Quantization Tool
 
 ```bash
